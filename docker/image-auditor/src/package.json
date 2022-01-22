@@ -1,0 +1,11 @@
+{
+  "name": "api-auditor",
+  "version": "1.0.0",
+  "description": "Implementation of auditor application for the lab",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jonathan Stocchetti, Clément Dieperink",
+  "license": "ISC"
+}
