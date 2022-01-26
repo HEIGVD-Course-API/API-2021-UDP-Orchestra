@@ -1,5 +1,7 @@
-const protocol = require('./auditor-protocol');
-const dgram = require('dgram');
+import { PROTOCOL_PORT, PROTOCOL_MULTICAST_ADDRESS } from './auditor-protocol.js';
+import { createSocket } from 'dgram';
+import moment from 'moment';
+import express from 'express';
 
 const musicians = new Map();
 
@@ -18,19 +20,39 @@ class Musician {
     }
 
     this.uuid = uuid;
-    this.song = [...instrus_sounds].find(([key, instruSong]) => instruSong === song)[0];
+    this.instrument = [...instrus_sounds].find(([key, instruSong]) => instruSong === song)[0];
+    this.activeSince = moment();
+    this.lastActive = moment();
   }
 
   setTime() {
+    this.lastActive = moment();
   }
 }
 
-const s = dgram.createSocket('udp4');
-s.bind(protocol.PROTOCOL_PORT, function () {
+function getMusicians() {
+  return [...musicians];
+}
+
+const s = createSocket('udp4');
+s.bind(PROTOCOL_PORT, function () {
   console.log("Joining multicast group");
-  s.addMembership(protocol.PROTOCOL_MULTICAST_ADDRESS);
+  s.addMembership(PROTOCOL_MULTICAST_ADDRESS);
 });
 
 s.on('message', function(msg, source) {
-  musicians.set(msg.uuid, new Musician(msg.uuid, msg.song));
+  if (musicians.has(msg.uuid)) {
+    musicians.get(msg.uuid).setTime();
+  } else {
+    musicians.set(msg.uuid, new Musician(msg.uuid, msg.song));
+  }
 });
+
+var app = express();
+app.get('/', function (req, res) {
+  res.send(getMusicians());
+});
+
+app.listen(2205, function() {
+  console.log('Accepting request on port 2205!');
+})
