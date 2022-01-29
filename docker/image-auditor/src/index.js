@@ -1,17 +1,9 @@
-import { PROTOCOL_PORT, PROTOCOL_MULTICAST_ADDRESS } from './auditor-protocol.js';
-import { createSocket } from 'dgram';
+import { PROTOCOL_PORT, PROTOCOL_MULTICAST_ADDRESS, INSTRUS_SOUNDS } from './auditor-protocol.js';
+import dgram from 'dgram';
 import moment from 'moment';
 import net from 'net';
 
 const musicians = new Map();
-
-const instrus_sounds = new Map([
-  ["piano", "ti-ta-ti"],
-  ["trumpet", "pouet"],
-  ["flute", "trulu"],
-  ["violin", "gzi-gzi"],
-  ["drum", "boum-boum"]
-]);
 
 class Musician {
   constructor(uuid, sound) {
@@ -19,11 +11,15 @@ class Musician {
       throw 'Null uuid or song';
     }
 
+    // Save the uuid, instrument from given sound and current date.
     this.uuid = uuid;
-    this.instrument = [...instrus_sounds].find(([key, instruSong]) => instruSong === sound)[0];
+    this.instrument = [...INSTRUS_SOUNDS].find(([key, instruSong]) => instruSong === sound)[0];
     this.activeSince = moment();
   }
 
+  /**
+   * @returns Return this in JSON format.
+   */
   toJSON() {
     return {
       uuid: this.uuid,
@@ -32,6 +28,9 @@ class Musician {
     };
   }
 
+  /**
+   * Set or reset the timeout to self desctruct in 5 seconds.
+   */
   resetTimeout() {
     if (this.timeout) {
       clearTimeout(this.timeout);
@@ -39,12 +38,19 @@ class Musician {
     this.timeout = setTimeout(this.remove.bind(this), 5000);
   }
 
+  /**
+   * Self remove from musicians map.
+   */
   remove() {
     musicians.delete(this.uuid);
   }
 }
 
+/**
+ * @returns Get a buffer to send current musicians status.
+ */
 function getMusiciansBuffer() {
+  // Add all musicians to an array before creating the buffer.
   let musiciansArr = [];
   for (let [k, v] of musicians) {
     musiciansArr.push(v.toJSON());
@@ -52,15 +58,20 @@ function getMusiciansBuffer() {
   return Buffer.from(JSON.stringify(musiciansArr));
 }
 
-const s = createSocket('udp4');
+// Begin reading broadcast address.
+const s = dgram.createSocket('udp4');
 s.bind(PROTOCOL_PORT, function () {
   console.log("Joining multicast group");
   s.addMembership(PROTOCOL_MULTICAST_ADDRESS);
 });
 
+// Detect new sounds.
 s.on('message', function(msg, source) {
   console.log("Sound dected!");
+
   let jsonMsg = JSON.parse(msg.toString());
+
+  // If the musicians as never been heard, add it to the map.
   if (!musicians.has(jsonMsg.uuid)) {
     musicians.set(jsonMsg.uuid, new Musician(jsonMsg.uuid, jsonMsg.sound));
   }
@@ -68,6 +79,7 @@ s.on('message', function(msg, source) {
   musicians.get(jsonMsg.uuid).resetTimeout();
 });
 
+// TCP server to return current active musicians.
 var server = net.createServer(function(socket) {
   console.log("New musicians request");
   socket.write(getMusiciansBuffer());
