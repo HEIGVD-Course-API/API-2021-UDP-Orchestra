@@ -1,7 +1,7 @@
 import { PROTOCOL_PORT, PROTOCOL_MULTICAST_ADDRESS } from './auditor-protocol.js';
 import { createSocket } from 'dgram';
 import moment from 'moment';
-import express from 'express';
+import net from 'net';
 
 const musicians = new Map();
 
@@ -14,24 +14,42 @@ const instrus_sounds = new Map([
 ]);
 
 class Musician {
-  constructor(uuid, song) {
-    if (!uuid || !song) {
+  constructor(uuid, sound) {
+    if (!uuid || !sound) {
       throw 'Null uuid or song';
     }
 
     this.uuid = uuid;
-    this.instrument = [...instrus_sounds].find(([key, instruSong]) => instruSong === song)[0];
+    this.instrument = [...instrus_sounds].find(([key, instruSong]) => instruSong === sound)[0];
     this.activeSince = moment();
-    this.lastActive = moment();
   }
 
-  setTime() {
-    this.lastActive = moment();
+  toJSON() {
+    return {
+      uuid: this.uuid,
+      instrument: this.instrument,
+      activeSince: this.activeSince.format()
+    };
+  }
+
+  resetTimeout() {
+    if (this.timeout) {
+      clearTimeout(this.timeout);
+    }
+    this.timeout = setTimeout(this.remove.bind(this), 5000);
+  }
+
+  remove() {
+    musicians.delete(this.uuid);
   }
 }
 
-function getMusicians() {
-  return [...musicians];
+function getMusiciansBuffer() {
+  let musiciansArr = [];
+  for (let [k, v] of musicians) {
+    musiciansArr.push(v.toJSON());
+  }
+  return Buffer.from(JSON.stringify(musiciansArr));
 }
 
 const s = createSocket('udp4');
@@ -41,18 +59,20 @@ s.bind(PROTOCOL_PORT, function () {
 });
 
 s.on('message', function(msg, source) {
-  if (musicians.has(msg.uuid)) {
-    musicians.get(msg.uuid).setTime();
-  } else {
-    musicians.set(msg.uuid, new Musician(msg.uuid, msg.song));
+  console.log("Sound dected!");
+  let jsonMsg = JSON.parse(msg.toString());
+  if (!musicians.has(jsonMsg.uuid)) {
+    musicians.set(jsonMsg.uuid, new Musician(jsonMsg.uuid, jsonMsg.sound));
   }
+
+  musicians.get(jsonMsg.uuid).resetTimeout();
 });
 
-var app = express();
-app.get('/', function (req, res) {
-  res.send(getMusicians());
+var server = net.createServer(function(socket) {
+  console.log("New musicians request");
+  socket.write(getMusiciansBuffer());
+  socket.pipe(socket);
+  socket.end();
 });
 
-app.listen(2205, function() {
-  console.log('Accepting request on port 2205!');
-})
+server.listen(PROTOCOL_PORT);
